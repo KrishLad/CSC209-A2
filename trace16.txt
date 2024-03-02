@@ -1,0 +1,15 @@
+#
+# trace16.txt - Tests whether the shell can handle SIGTSTP and SIGINT
+#     signals that come from other processes instead of the terminal.
+#
+
+/bin/echo -e tsh\076 ./mystop 2 
+./mystop 2
+
+SLEEP 3
+
+/bin/echo -e tsh\076 jobs
+jobs
+
+/bin/echo -e tsh\076 ./myint 2 
+./myint 2

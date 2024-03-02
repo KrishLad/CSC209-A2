@@ -1,0 +1,9 @@
+#
+# trace17.txt - Tests whether the shell can handle I/O redirection
+#
+
+/bin/echo -e tsh\076 /bin/echo hello \076 outfile
+/bin/echo hello > outfile
+
+/bin/echo -e tsh\076 /bin/cat \074 outfile
+/bin/cat < outfile

@@ -1,0 +1,5 @@
+#
+# trace03.txt - Run a foreground job.
+#
+/bin/echo -e tsh\076 ./myspin 1
+./myspin 1
