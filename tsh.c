@@ -220,6 +220,7 @@ int parseline(const char *cmdline, char **argv) {
  *    it immediately.  
  */
 int builtin_cmd(char **argv) {
+    //Idea: if-else ladder
     return 0;     /* not a builtin command */
 }
 
@@ -227,6 +228,8 @@ int builtin_cmd(char **argv) {
  * do_bgfg - Execute the builtin bg and fg commands
  */
 void do_bgfg(char **argv) {
+    //bg turns stopped process into running process in background
+    //fg turns running or stopped background into running foreground
     return;
 }
 
@@ -234,6 +237,7 @@ void do_bgfg(char **argv) {
  * waitfg - Block until process pid is no longer the foreground process
  */
 void waitfg(pid_t pid) {
+    //Idea: Wait until the pid cannot be found im jobs list sleep or wait
     return;
 }
 
