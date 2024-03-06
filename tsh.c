@@ -165,6 +165,26 @@ int main(int argc, char **argv) {
  * when we type ctrl-c (ctrl-z) at the keyboard.  
 */
 void eval(char *cmdline) {
+
+    if (strcmp(cmdline, "quit\0") == 0) {
+        // TODO: Quit, just exit?
+    }
+    else if (strcmp(cmdline, "jobs\0") == 0) {
+        // Prints out jobs
+        listjobs(jobs);
+    }
+    else if (strcmp(cmdline, "bg\0") == 0) {
+        // TODO: move to background
+    }
+    else if (strcmp(cmdline, "fg\0") == 0) {
+        // TODO: move to foreground
+    }
+    else {  // Know it is not built in
+        r = fork()
+
+        // TODO run
+    }
+
     return;
 }
 
@@ -230,6 +250,7 @@ int builtin_cmd(char **argv) {
 void do_bgfg(char **argv) {
     //bg turns stopped process into running process in background
     //fg turns running or stopped background into running foreground
+
     return;
 }
 
