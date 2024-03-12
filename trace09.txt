@@ -1,0 +1,20 @@
+#
+# trace09.txt - Process bg builtin command
+#
+/bin/echo -e tsh\076 ./myspin 4 \046
+./myspin 4 &
+
+/bin/echo -e tsh\076 ./myspin 5
+./myspin 5 
+
+SLEEP 2
+TSTP
+
+/bin/echo -e tsh\076 jobs
+jobs
+
+/bin/echo -e tsh\076 bg %2
+bg %2
+
+/bin/echo -e tsh\076 jobs
+jobs

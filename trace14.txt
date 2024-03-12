@@ -1,0 +1,44 @@
+#
+# trace14.txt - Simple error handling
+#
+/bin/echo -e tsh\076 ./bogus
+./bogus
+
+/bin/echo -e tsh\076 ./myspin 4 \046
+./myspin 4 &
+
+/bin/echo -e tsh\076 fg
+fg
+
+/bin/echo -e tsh\076 bg
+bg
+
+/bin/echo -e tsh\076 fg a
+fg a
+
+/bin/echo -e tsh\076 bg a
+bg a
+
+/bin/echo -e tsh\076 fg 9999999
+fg 9999999
+
+/bin/echo -e tsh\076 bg 9999999
+bg 9999999
+
+/bin/echo -e tsh\076 fg %2
+fg %2
+
+/bin/echo -e tsh\076 fg %1
+fg %1
+
+SLEEP 2
+TSTP
+
+/bin/echo -e tsh\076 bg %2
+bg %2
+
+/bin/echo -e tsh\076 bg %1
+bg %1
+
+/bin/echo -e tsh\076 jobs
+jobs
