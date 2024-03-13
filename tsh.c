@@ -175,7 +175,7 @@ int main(int argc, char **argv) {
 */
 void eval(char *cmdline) {
 
-    char **argv = malloc(sizeof(char *)*10);
+    char **argv = malloc(sizeof(char *)*MAXLINE);
     int argc = parseline(cmdline, argv);
 
     if (argc == 0) {
@@ -203,7 +203,6 @@ void eval(char *cmdline) {
         }
         if (r > 0) {
             waitfg(r);
-            return 0;
         }
     }
 }
@@ -261,8 +260,9 @@ int parseline(const char *cmdline, char **argv) {
  */
 int builtin_cmd(char **argv) {
     if (strcmp(argv[0], "quit\0") == 0) {
-        return 0;
+        exit(0);
     } else if (strcmp(argv[0], "jobs\0") == 0) {
+        listjobs(jobs);
         return 0;
     } else if (strcmp(argv[0], "fg\0") == 0 || strcmp(argv[0], "bg\0") == 0) {
         do_bgfg(argv);
@@ -302,7 +302,7 @@ void do_bgfg(char **argv) {
  * waitfg - Block until process pid is no longer the foreground process
  */
 void waitfg(pid_t pid) {
-    struct job_t *cur_job = getjobpid(pid);
+    struct job_t *cur_job = getjobpid(jobs, pid);
     while (cur_job->state == FG) {
         sleep(1);
     }
