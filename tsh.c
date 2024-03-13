@@ -166,13 +166,12 @@ int main(int argc, char **argv) {
  * when we type ctrl-c (ctrl-z) at the keyboard.  
 */
 void eval(char *cmdline) {
-
     char **argv = malloc(sizeof(char *)*MAXARGS);
     int argc = parseline(cmdline, argv);
-
-    if (argc == 0) {
-        app_error("Please provide at least one prompt.");
+    if(argc == 0){
+        return;
     }
+
     if (strcmp(argv[0], "quit\0") == 0 || strcmp(argv[0], "jobs\0") == 0 || strcmp(argv[0], "bg\0") == 0 || (strcmp(argv[0], "fg\0") == 0))
     {
         builtin_cmd(argv);
@@ -182,7 +181,7 @@ void eval(char *cmdline) {
             //run the job here
             int error = execv(argv[0], argv);
             if (error != 0) {
-                printf("Error");
+                printf("Error\n");
                 exit(error);
             }
 
