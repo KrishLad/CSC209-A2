@@ -98,8 +98,6 @@ int main(int argc, char **argv) {
      * on the pipe connected to stdout) */
     dup2(STDOUT_FILENO, STDERR_FILENO);
 
-    printf("HERE\n");
-
     /* Parse the command line */
     while ((c = getopt(argc, argv, "hvp")) != -1) {
         switch (c) {
@@ -117,8 +115,6 @@ int main(int argc, char **argv) {
         }
     }
 
-    printf("HERE\n");
-
     /* Install the signal handlers */
 
     Signal(SIGUSR1, sigusr1_handler); /* Child is ready */
@@ -131,12 +127,8 @@ int main(int argc, char **argv) {
     /* This one provides a clean way to kill the shell */
     Signal(SIGQUIT, sigquit_handler); 
 
-    printf("HERE\n");
-
     /* Initialize the job list */
     initjobs(jobs);
-
-    printf("HERE\n");
 
     /* Execute the shell's read/eval loop */
     
@@ -175,7 +167,7 @@ int main(int argc, char **argv) {
 */
 void eval(char *cmdline) {
 
-    char **argv = malloc(sizeof(char *)*MAXLINE);
+    char **argv = malloc(sizeof(char *)*MAXARGS);
     int argc = parseline(cmdline, argv);
 
     if (argc == 0) {
@@ -188,13 +180,9 @@ void eval(char *cmdline) {
         int r = fork();
         if (r == 0) {
             //run the job here
-            char **second_argv = malloc(sizeof(char *)*(argc - 1));
-            for (int i = 1; i < argc; i++) {
-                second_argv[i] = argv[i];
-            }
-            int error = execv(argv[0], second_argv);
+            int error = execv(argv[0], argv);
             if (error != 0) {
-                printf("FUCKCCCCCC\n");
+                printf("Error");
                 exit(error);
             }
 
