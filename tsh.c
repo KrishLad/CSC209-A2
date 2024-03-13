@@ -177,7 +177,7 @@ void eval(char *cmdline) {
     {
         builtin_cmd(argv);
     } else {
-        int r = fork();
+        int r = fork(); //pid for child (in parent)
         if (r == 0) {
             //run the job here
             int error = execv(argv[0], argv);
@@ -190,7 +190,14 @@ void eval(char *cmdline) {
 
         }
         if (r > 0) {
-            waitfg(r);
+            if (strcmp(argv[argc-1],"&")){ //send to background
+                addjob(jobs,r,BG,cmdline);
+            }
+            else{ //run in foreground
+                addjob(jobs,r,FG,cmdline);
+                waitfg(r);
+            }
+            
         }
     }
 }
