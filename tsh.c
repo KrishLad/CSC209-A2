@@ -168,23 +168,41 @@ int main(int argc, char **argv) {
 void eval(char *cmdline) {
     char **argv = malloc(sizeof(char *)*MAXARGS);
     int argc = parseline(cmdline, argv);
+
     if(argc == 0){
         return;
     }
-
     if (strcmp(argv[0], "quit\0") == 0 || strcmp(argv[0], "jobs\0") == 0 || strcmp(argv[0], "bg\0") == 0 || (strcmp(argv[0], "fg\0") == 0))
     {
         builtin_cmd(argv);
     } else {
+
         int r = fork(); //pid for child (in parent)
+        int error;
         if (r == 0) {
             //run the job here
-            int error = execv(argv[0], argv);
-            if (error != 0) {
-                printf("Error\n");
-                exit(error);
-            }
+            char *isNotBashCommand = strchr(argv[0], '\'');
+            printf("%s",isNotBashCommand);
+            if (isNotBashCommand == NULL){ // we have a bash command
+                
+                size_t length = strlen(argv[0]) + 10;
+                char *path = malloc(sizeof(char) * length);
+                strncpy(path, "/usr/bin/", 10);
 
+                strcat(path, argv[0]);
+
+                error = execv(path, argv);
+                if (error != 0) {
+                    printf("Error\n");
+                    exit(error);
+                }
+            } else { //it is a regular file
+                error = execv(argv[0], argv);
+                if (error != 0) {
+                    printf("Error\n");
+                    exit(error);
+                }
+            }
         // TODO: WTF IS A PROCESS GROUYP ID!
 
         }
