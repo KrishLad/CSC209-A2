@@ -189,7 +189,7 @@ void eval(char *cmdline) {
                 char *path = malloc(sizeof(char) * length);
                 strncpy(path, "/usr/bin/", 10);
 
-                strcat(path, argv[0]);
+                strncat(path, argv[0], strlen(argv[0]));
 
                 error = execv(path, argv);
                 if (error != 0) {
@@ -197,6 +197,7 @@ void eval(char *cmdline) {
                     exit(error);
                 }
             } else { //it is a regular file
+                printf("%s", isNotBashCommand);
                 error = execv(argv[0], argv);
                 if (error != 0) {
                     printf("Error\n");
