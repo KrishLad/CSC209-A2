@@ -168,54 +168,43 @@ int main(int argc, char **argv) {
 void eval(char *cmdline) {
     char **argv = malloc(sizeof(char *)*MAXARGS);
     int argc = parseline(cmdline, argv);
+    printf("process id: %d\n", getpid());
 
     if(argc == 0){
         return;
     }
-    if (strcmp(argv[0], "quit\0") == 0 || strcmp(argv[0], "jobs\0") == 0 || strcmp(argv[0], "bg\0") == 0 || (strcmp(argv[0], "fg\0") == 0))
+    if (strcmp(argv[0], "quit") == 0 || strcmp(argv[0], "jobs") == 0 || strcmp(argv[0], "bg") == 0 || (strcmp(argv[0], "fg") == 0))
     {
+        printf("HIT");
         builtin_cmd(argv);
     } else {
 
         int r = fork(); //pid for child (in parent)
+        printf("r right now: %d\n", r);
         int error;
         if (r == 0) {
+
+            printf("HIT HERE 2");
+
             //run the job here
-            char *isNotBashCommand = strchr(argv[0], '\'');
-            printf("%s",isNotBashCommand);
-            if (isNotBashCommand == NULL){ // we have a bash command
-                
-                size_t length = strlen(argv[0]) + 10;
-                char *path = malloc(sizeof(char) * length);
-                strncpy(path, "/usr/bin/", 10);
-
-                strncat(path, argv[0], strlen(argv[0]));
-
-                error = execv(path, argv);
-                if (error != 0) {
-                    printf("Error\n");
-                    exit(error);
-                }
-            } else { //it is a regular file
-                printf("%s", isNotBashCommand);
-                error = execv(argv[0], argv);
-                if (error != 0) {
-                    printf("Error\n");
-                    exit(error);
-                }
+            error = execv(argv[0], argv);
+            if (error != 0) {
+                printf("Error %d\n", error);
+                exit(error);
             }
-        // TODO: WTF IS A PROCESS GROUYP ID!
 
+            if (strcmp(argv[argc-1], "&") == 0) {
+                addjob(jobs, getpid(), BG, cmdline);
+            } else {
+                addjob(jobs, getpid(), FG, cmdline);
+                waitfg(getpid());
+            }
         }
         if (r > 0) {
-            if (strcmp(argv[argc-1],"&")){ //send to background
-                addjob(jobs,r,BG,cmdline);
-            }
-            else{ //run in foreground
-                addjob(jobs,r,FG,cmdline);
-                waitfg(r);
-            }
             
+            printf("HIT HERE 3");
+
+            deletejob(jobs, r);
         }
     }
 }
@@ -272,14 +261,15 @@ int parseline(const char *cmdline, char **argv) {
  *    it immediately.  
  */
 int builtin_cmd(char **argv) {
-    if (strcmp(argv[0], "quit\0") == 0) {
+    if (strcmp(argv[0], "quit") == 0) {
         exit(0);
-    } else if (strcmp(argv[0], "jobs\0") == 0) {
+    } else if (strcmp(argv[0], "jobs") == 0) {
+        printf("HIT");
         listjobs(jobs);
-        return 0;
-    } else if (strcmp(argv[0], "fg\0") == 0 || strcmp(argv[0], "bg\0") == 0) {
+        // return 0;
+    } else if (strcmp(argv[0], "fg") == 0 || strcmp(argv[0], "bg") == 0) {
         do_bgfg(argv);
-        return 0;
+        // return 0;
     }
     return 1;
 }
@@ -316,7 +306,7 @@ void do_bgfg(char **argv) {
  */
 void waitfg(pid_t pid) {
     struct job_t *cur_job = getjobpid(jobs, pid);
-    while (cur_job->state == FG) {
+    while (cur_job != NULL && cur_job->state == FG) {
         sleep(1);
     }
 }
@@ -574,5 +564,3 @@ void sigquit_handler(int sig) {
     printf("Terminating after receipt of SIGQUIT signal\n");
     exit(1);
 }
-
-
