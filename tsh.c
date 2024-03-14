@@ -168,42 +168,53 @@ int main(int argc, char **argv) {
 void eval(char *cmdline) {
     char **argv = malloc(sizeof(char *)*MAXARGS);
     int argc = parseline(cmdline, argv);
-    printf("process id: %d\n", getpid());
 
     if(argc == 0){
         return;
     }
     if (strcmp(argv[0], "quit") == 0 || strcmp(argv[0], "jobs") == 0 || strcmp(argv[0], "bg") == 0 || (strcmp(argv[0], "fg") == 0))
     {
-        printf("HIT");
         builtin_cmd(argv);
     } else {
 
         int r = fork(); //pid for child (in parent)
-        printf("r right now: %d\n", r);
+        printf("r after fork: %d\n", r);
         int error;
-        if (r == 0) {
 
-            printf("HIT HERE 2");
+        if (r == 0) {  // in child
+
+            printf("in child\n");
 
             //run the job here
-            error = execv(argv[0], argv);
+            printf("before error\n");
+
+
+            // This was for debugging
+            // for (int i = 0; i < argc; i++) {
+            //     printf("argv[%d]: %s\n", i, argv[i]);
+            // }
+
+            if (strcmp(argv[argc-1], "&") == 0) {
+                addjob(jobs, getpid(), BG, cmdline);
+            } else {
+                printf("adding...\n");
+                addjob(jobs, getpid(), FG, cmdline);
+                listjobs(jobs);  // This is just here to see if jobs are listed correctly
+                printf("added\n");
+                // waitfg(getpid());  // This is problematic for some reason, seems like infinite looping?
+            }
+
+            error = execv(argv[0], argv);  // Execute
+
             if (error != 0) {
                 printf("Error %d\n", error);
                 exit(error);
             }
 
-            if (strcmp(argv[argc-1], "&") == 0) {
-                addjob(jobs, getpid(), BG, cmdline);
-            } else {
-                addjob(jobs, getpid(), FG, cmdline);
-                waitfg(getpid());
-            }
         }
-        if (r > 0) {
+        if (r > 0) {  // in parent
             
-            printf("HIT HERE 3");
-
+            printf("in parent\n");
             deletejob(jobs, r);
         }
     }
@@ -264,12 +275,12 @@ int builtin_cmd(char **argv) {
     if (strcmp(argv[0], "quit") == 0) {
         exit(0);
     } else if (strcmp(argv[0], "jobs") == 0) {
-        printf("HIT");
+        
         listjobs(jobs);
-        // return 0;
+        return 0;
     } else if (strcmp(argv[0], "fg") == 0 || strcmp(argv[0], "bg") == 0) {
         do_bgfg(argv);
-        // return 0;
+        return 0;
     }
     return 1;
 }
