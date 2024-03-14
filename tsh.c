@@ -342,6 +342,9 @@ void sigchld_handler(int sig) {
  *    to the foreground job.  
  */
 void sigint_handler(int sig) {
+
+    kill(-fgpid(jobs), sig);
+
     return;
 }
 
