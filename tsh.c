@@ -204,6 +204,7 @@ void eval(char *cmdline) {
                 // waitfg(getpid());  // This is problematic for some reason, seems like infinite looping?
             }
 
+            // fix second argument - currently cant run anything in the background
             error = execv(argv[0], argv);  // Execute
 
             if (error != 0) {
