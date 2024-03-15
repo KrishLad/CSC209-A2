@@ -178,6 +178,7 @@ void eval(char *cmdline) {
     } else {
 
         int r = fork(); //pid for child (in parent)
+        printf("r after fork: %d\n", r);
         int error;
 
         if (r == 0) {  // in child
@@ -185,21 +186,26 @@ void eval(char *cmdline) {
             printf("in child\n");
 
             //run the job here
+            printf("before error\n");
+
+
+            // This was for debugging
+            // for (int i = 0; i < argc; i++) {
+            //     printf("argv[%d]: %s\n", i, argv[i]);
+            // }
 
             if (strcmp(argv[argc-1], "&") == 0) {
                 addjob(jobs, getpid(), BG, cmdline);
             } else {
+                printf("adding...\n");
                 addjob(jobs, getpid(), FG, cmdline);
                 listjobs(jobs);  // This is just here to see if jobs are listed correctly
+                printf("added\n");
+                // waitfg(getpid());  // This is problematic for some reason, seems like infinite looping?
             }
 
             // fix second argument - currently cant run anything in the background
-            char **second_argv = malloc(sizeof(char *)*(argc-1));
-            for (int i = 1; i < argc; i++) {
-                second_argv[i] = argv[i];
-            }
-
-            error = execv(argv[0], second_argv);  // Execute
+            error = execv(argv[0], argv);  // Execute
 
             if (error != 0) {
                 printf("Error %d\n", error);
