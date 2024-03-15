@@ -175,7 +175,8 @@ void eval(char *cmdline) {
     if (strcmp(argv[0], "quit") == 0 || strcmp(argv[0], "jobs") == 0 || strcmp(argv[0], "bg") == 0 || (strcmp(argv[0], "fg") == 0))
     {
         builtin_cmd(argv);
-    } else {
+    } 
+    else {
 
         int r = fork(); //pid for child (in parent)
         printf("r after fork: %d\n", r);
@@ -187,7 +188,6 @@ void eval(char *cmdline) {
 
             //run the job here
             printf("before error\n");
-
 
             // This was for debugging
             // for (int i = 0; i < argc; i++) {
@@ -201,10 +201,11 @@ void eval(char *cmdline) {
                 addjob(jobs, getpid(), FG, cmdline);
                 listjobs(jobs);  // This is just here to see if jobs are listed correctly
                 printf("added\n");
-                // waitfg(getpid());  // This is problematic for some reason, seems like infinite looping?
+                waitfg(r);  // This is problematic for some reason, seems like infinite looping?
             }
 
             // fix second argument - currently cant run anything in the background
+            
             error = execv(argv[0], argv);  // Execute
 
             if (error != 0) {
@@ -317,10 +318,24 @@ void do_bgfg(char **argv) {
  * waitfg - Block until process pid is no longer the foreground process
  */
 void waitfg(pid_t pid) {
-    struct job_t *cur_job = getjobpid(jobs, pid);
-    while (cur_job != NULL && cur_job->state == FG) {
-        sleep(1);
+
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGCHLD);
+
+    while (1) {
+
+        sigsuspend(&mask);
+
+        if (fgpid(jobs) == 0) {  // If no job in forground
+            return;
+        }
     }
+
+    // struct job_t *cur_job = getjobpid(jobs, pid);
+    // while (cur_job != NULL && cur_job->state == FG) {
+    //     sleep(1);
+    // }
 }
 
 
