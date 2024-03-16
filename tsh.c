@@ -179,28 +179,24 @@ void eval(char *cmdline) {
     else {
 
         int r = fork(); //pid for child (in parent)
-        printf("r after fork: %d\n", r);
         int error;
 
         if (r == 0) {  // in child
 
-            printf("in child\n");
-
             //run the job here
-            printf("before error\n");
 
-            // This was for debugging
-            // for (int i = 0; i < argc; i++) {
-            //     printf("argv[%d]: %s\n", i, argv[i]);
-            // }
-
-            if (strcmp(argv[argc-1], "&") == 0) {
+            if (strcmp(argv[argc-1], "&") == 0) {  // To be run in bg
+                printf("adding bg...\n");
                 addjob(jobs, getpid(), BG, cmdline);
-            } else {
-                printf("adding...\n");
+                argv[argc-1] = '\0';  // Makes '&' null
+                listjobs(jobs);  // This is just here to see if jobs are listed correctly
+                printf("added bg\n");
+            } 
+            else {  // To be run in fg
+                printf("adding fg...\n");
                 addjob(jobs, getpid(), FG, cmdline);
                 listjobs(jobs);  // This is just here to see if jobs are listed correctly
-                printf("added\n");
+                printf("added fg\n");
                 waitfg(r);  // This is problematic for some reason, seems like infinite looping?
             }
 
@@ -291,26 +287,48 @@ int builtin_cmd(char **argv) {
  * do_bgfg - Execute the builtin bg and fg commands
  */
 void do_bgfg(char **argv) {
-    if (strcmp(argv[1], "bg") == 0) {
 
-        int id = strtol(argv[2], NULL, 10);
+    printf("in do_bgfg\n");
+    
+    if (strcmp(argv[0], "bg") == 0) {
+        printf("in if bg\n");
+        int id = strtol(argv[1], NULL, 10);
         struct job_t *cur_job = getjobpid(jobs, id);
-        if (cur_job == NULL) {
+        if (cur_job == NULL) {  // Can get JID too
             cur_job = getjobjid(jobs, id);
         }
 
         //update state
-        if (cur_job->state == ST){ //If the job is under teh stopped state.
-            //kill - ie, send SIGCONT
+        if (cur_job->state == ST){ //If the job is under the stopped state.
+            // kill - ie, send SIGCONT
              kill(cur_job->pid, SIGCONT);
              cur_job->state = BG;
-        } else {
+             listjobs(jobs);
+        } 
+        else {
             //error check
+            perror("Process has not been stopped\n");
         }   
-    
     }
-    else if (strcmp(argv[1], "fg") == 0) {
-        printf("to be done");
+    else if (strcmp(argv[0], "fg") == 0) {
+        printf("in if fg\n");
+        int id = strtol(argv[1], NULL, 10);
+        struct job_t *cur_job = getjobpid(jobs, id);
+        if (cur_job == NULL) {  // Can get JID too
+            cur_job = getjobjid(jobs, id);
+        }
+
+        //update state
+        if (cur_job->state == ST || cur_job->state == BG){ //If the job is in the background state or stopped
+            // kill - ie, send SIGCONT
+             kill(cur_job->pid, SIGCONT);
+             cur_job->state = FG;
+             listjobs(jobs);
+        } 
+        else {
+            //error check
+            perror("Job is not running in background or is not stopped\n");
+        } 
     }
 }
 
@@ -331,11 +349,6 @@ void waitfg(pid_t pid) {
             return;
         }
     }
-
-    // struct job_t *cur_job = getjobpid(jobs, pid);
-    // while (cur_job != NULL && cur_job->state == FG) {
-    //     sleep(1);
-    // }
 }
 
 
