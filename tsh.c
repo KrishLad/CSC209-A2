@@ -177,31 +177,16 @@ void eval(char *cmdline) {
         builtin_cmd(argv);
     } 
     else {
-
-        int r = fork(); //pid for child (in parent)
+        int r = fork(); 
         int error;
 
         if (r == 0) {  // in child
 
-            //run the job here
-
             if (strcmp(argv[argc-1], "&") == 0) {  // To be run in bg
-                printf("adding bg...\n");
-                addjob(jobs, getpid(), BG, cmdline);
                 argv[argc-1] = '\0';  // Makes '&' null
-                listjobs(jobs);  // This is just here to see if jobs are listed correctly
-                printf("added bg\n");
             } 
-            else {  // To be run in fg
-                printf("adding fg...\n");
-                addjob(jobs, getpid(), FG, cmdline);
-                listjobs(jobs);  // This is just here to see if jobs are listed correctly
-                printf("added fg\n");
-                waitfg(r);  // This is problematic for some reason, seems like infinite looping?
-            }
 
-            // fix second argument - currently cant run anything in the background
-            
+            //run the job here
             error = execv(argv[0], argv);  // Execute
 
             if (error != 0) {
@@ -212,8 +197,14 @@ void eval(char *cmdline) {
         }
         if (r > 0) {  // in parent
             
-            printf("in parent\n");
-            deletejob(jobs, r);
+            if (strcmp(argv[argc-1], "&") == 0) {  // To be run in bg
+                addjob(jobs, getpid(), BG, cmdline);
+            } 
+            else {  // To be run in fg
+                addjob(jobs, getpid(), FG, cmdline);
+                waitfg(r);  // This is problematic for some reason, seems like infinite looping?
+            }
+
         }
     }
 }
@@ -273,7 +264,6 @@ int builtin_cmd(char **argv) {
     if (strcmp(argv[0], "quit") == 0) {
         exit(0);
     } else if (strcmp(argv[0], "jobs") == 0) {
-        
         listjobs(jobs);
         return 0;
     } else if (strcmp(argv[0], "fg") == 0 || strcmp(argv[0], "bg") == 0) {
@@ -376,7 +366,6 @@ void sigint_handler(int sig) {
 
     kill(-fgpid(jobs), sig);
 
-    return;
 }
 
 /*
