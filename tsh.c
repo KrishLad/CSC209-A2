@@ -182,7 +182,6 @@ void eval(char *cmdline) {
         //block signals from reaching the foreground until the job is added
         sigset_t mask;
         sigemptyset(&mask);
-        sigaddset(&mask, SIGCHLD);
         sigaddset(&mask, SIGINT);
         sigaddset(&mask, SIGTSTP);
         sigprocmask(SIG_SETMASK, &mask, NULL);
@@ -220,10 +219,10 @@ void eval(char *cmdline) {
             
             //add jobs
             if (strcmp(argv[argc-1], "&") == 0) {  // To be run in bg
-                addjob(jobs, getpid(), BG, cmdline);
+                addjob(jobs, r, BG, cmdline);
             } 
             else {  // To be run in fg
-                addjob(jobs, getpid(), FG, cmdline);
+                addjob(jobs, r, FG, cmdline);
                 waitfg(r);
             }
         }
@@ -233,12 +232,12 @@ void eval(char *cmdline) {
             sigprocmask(SIG_UNBLOCK, &mask, NULL); 
 
             //un-ignoring signals for exec call
-            act_int.sa_handler = sigint_handler;
+            act_int.sa_handler = SIG_DFL;
             error = sigaction(SIGINT, &act_int, NULL);
             if (error != 0) {
                 printf("sigaction number 4 failed");
             }
-            act_stop.sa_handler = sigtstp_handler;
+            act_stop.sa_handler = SIG_DFL;
             error = sigaction(SIGTSTP, &act_stop, NULL);
             if (error != 0) {
                 printf("sigaction number 5 failed");
@@ -343,11 +342,20 @@ int builtin_cmd(char **argv) {
  */
 void do_bgfg(char **argv) {
 
+    struct job_t *cur_job;
+    int id;
+
     //get the correct job to operate on
-    int id = strtol(argv[1], NULL, 10);
-    struct job_t *cur_job = getjobpid(jobs, id);
-    if (cur_job == NULL) {  // Can get JID too
+    if (argv[1][0] == '%') {  // Know its a JID
+        char *end;
+        int id = strtol(argv[1] + 1, &end, 10);
+        printf("%d\n", id);
         cur_job = getjobjid(jobs, id);
+    }
+    else {  // Know its a PID
+        id = strtol(argv[1], NULL, 10);
+        printf("%d\n", id);
+        cur_job = getjobpid(jobs, id);
     }
     
     //move the current job to the background if it is stopped.
@@ -357,8 +365,16 @@ void do_bgfg(char **argv) {
         //update state
         if (cur_job->state == ST){ //If the job is under the stopped state.
             // kill - ie, send SIGCONT
-             kill(cur_job->pid, SIGCONT);
-             cur_job->state = BG;
+            if (argv[1][0] == '%') {
+                kill(cur_job->jid, SIGCONT);
+                cur_job->state = BG;
+                listjobs(jobs);
+            }
+            else {
+                kill(cur_job->pid, SIGCONT);
+                cur_job->state = BG;
+                listjobs(jobs);
+            }
         } 
         else {
             //error check
@@ -366,14 +382,23 @@ void do_bgfg(char **argv) {
         }   
     }
     //move the current job to the foreground, so long as there is not already a foreground job running
-    //TODO: check to see that there's not already a foreground job
     else if (strcmp(argv[0], "fg") == 0) {
 
         //update state
         if (cur_job->state == ST || cur_job->state == BG){ //If the job is in the background state or stopped
-            // kill - ie, send SIGCONT
-             kill(cur_job->pid, SIGCONT);
-             cur_job->state = FG;
+            if (fgpid(jobs) == 0) {  // There's no job in the foreground
+                // kill - ie, send SIGCONT
+                if (argv[1][0] == '%') {
+                    kill(cur_job->jid, SIGCONT);
+                    cur_job->state = BG;
+                    listjobs(jobs);
+                }
+                else {
+                    kill(cur_job->pid, SIGCONT);
+                    cur_job->state = FG;
+                    listjobs(jobs);
+                }
+            }
         } 
         else {
             //error check
@@ -392,11 +417,17 @@ void waitfg(pid_t pid) {
     sigaddset(&mask, SIGCHLD);
     sigprocmask(SIG_BLOCK, &mask, &oldmask);
 
-    while(fgpid(jobs) == pid) {
-        sigsuspend(&oldmask);
-    }
+    sigsuspend(&oldmask);
+
+    // while (fgpid(jobs) == pid) {
+    //     sleep(1);
+    //     if (fgpid(jobs) != pid) {
+    //         break;
+    //     }
+    // }
     
     sigprocmask(SIG_UNBLOCK, &mask, NULL);
+    deletejob(jobs, pid);
 
 }
 
@@ -414,20 +445,29 @@ void waitfg(pid_t pid) {
  */
 void sigchld_handler(int sig) {
 
-    //not at all sure about this function. going to ask about specifics
 
     int status;
     int id;
-    id = waitpid(0, &status, WNOHANG || WUNTRACED);
 
-    if (WIFSTOPPED(status) == 0) {
-        kill(id, WSTOPSIG(status));
-    } else {
-        kill(id, sig);
+    while ((id = waitpid(0, &status, WNOHANG | WUNTRACED)) > 0) {
+        struct job_t *job = getjobpid(jobs, id);
+        if (job == NULL) {
+            exit(1);
+        }
+        else if (WIFSTOPPED(status)) {
+            job->state = ST;
+            kill(id, WSTOPSIG(status));
+        }
+        else if (WIFSIGNALED(status)) {
+            deletejob(jobs, id);
+            kill(id, sig);
+        } else if (WIFEXITED(status)) {
+            deletejob(jobs, id);
+            kill(id, sig);
+        } else {
+            unix_error("waitpid error");
+        }
     }
-
-    deletejob(jobs, id);
-    
 }
 
 /* 
