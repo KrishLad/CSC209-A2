@@ -206,7 +206,7 @@ void eval(char *cmdline) {
         //then for SIGCHLD
         struct sigaction act_chld;
         act_chld.sa_flags = 0;
-        act_chld.sa_handler = SIG_IGN;
+        act_chld.sa_handler = sigchld_handler;
         error = sigaction(SIGCHLD, &act_chld, NULL);
         if (error != 0) {
             printf("sigaction number 3 failed");
@@ -225,7 +225,6 @@ void eval(char *cmdline) {
             else {  // To be run in fg
                 addjob(jobs, getpid(), FG, cmdline);
                 waitfg(r);
-                deletejob(jobs, getpid());
             }
         }
         else if (r == 0) {
@@ -244,7 +243,7 @@ void eval(char *cmdline) {
             if (error != 0) {
                 printf("sigaction number 5 failed");
             }
-            act_chld.sa_handler = sigchld_handler;
+            act_chld.sa_handler = SIG_DFL;
             error = sigaction(SIGCHLD, &act_chld, NULL);
             if (error != 0) {
                 printf("sigaction number 6 failed");
@@ -266,6 +265,7 @@ void eval(char *cmdline) {
                 exit(1);
             }
         }
+
     }
 
     free(argv);
@@ -387,11 +387,16 @@ void do_bgfg(char **argv) {
  */
 void waitfg(pid_t pid) {
 
-    //test if the foreground process is actually in the foreground
-    //if it is, use sigsuspend to wait for a signal
-    //once the signal arrives, test again if it is a foreground process
-    //do this in a loop, since a signal may arrive that doesn't affect the fg process
-    //note that you are NOT ALLOWED to just use a for loop with the status of the process and sleep.
+    sigset_t mask, oldmask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGCHLD);
+    sigprocmask(SIG_BLOCK, &mask, &oldmask);
+
+    while(fgpid(jobs) == pid) {
+        sigsuspend(&oldmask);
+    }
+    
+    sigprocmask(SIG_UNBLOCK, &mask, NULL);
 
 }
 
