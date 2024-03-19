@@ -415,20 +415,14 @@ void waitfg(pid_t pid) {
     sigset_t mask, oldmask;
     sigemptyset(&mask);
     sigaddset(&mask, SIGCHLD);
+    
     sigprocmask(SIG_BLOCK, &mask, &oldmask);
 
     sigsuspend(&oldmask);
-
-    // while (fgpid(jobs) == pid) {
-    //     sleep(1);
-    //     if (fgpid(jobs) != pid) {
-    //         break;
-    //     }
-    // }
-    
-    sigprocmask(SIG_UNBLOCK, &mask, NULL);
-    deletejob(jobs, pid);
-
+    if (fgpid(jobs) != pid){
+        sigprocmask(SIG_UNBLOCK, &mask, NULL);
+        deletejob(jobs, pid);
+    }
 }
 
 
