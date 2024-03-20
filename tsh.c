@@ -17,7 +17,6 @@
 #define MAXLINE    1024   /* max line size */
 #define MAXARGS     128   /* max args on a command line */
 #define MAXJOBS      16   /* max jobs at any point in time */
-
 /* Job states */
 #define UNDEF 0 /* undefined */
 #define FG 1    /* running in foreground */
@@ -179,37 +178,37 @@ void eval(char *cmdline) {
     else {
         int error;
 
-        //block signals from reaching the foreground until the job is added
-        sigset_t mask;
-        sigemptyset(&mask);
-        sigaddset(&mask, SIGINT);
-        sigaddset(&mask, SIGTSTP);
-        sigprocmask(SIG_SETMASK, &mask, NULL);
-        //in addition to blocking signals, ignore them, so that the child never receives blocked signals
-        //first for SIGINT
-        struct sigaction act_int;
-        act_int.sa_flags = 0;
-        act_int.sa_handler = SIG_IGN;
-        error = sigaction(SIGINT, &act_int, NULL);
-        if (error != 0) {
-            printf("sigaction number 1 failed");
-        }
-        //then for SIGTSTP
-        struct sigaction act_stop;
-        act_stop.sa_flags = 0;
-        act_stop.sa_handler = SIG_IGN;
-        error = sigaction(SIGTSTP, &act_stop, NULL);
-        if (error != 0) {
-            printf("sigaction number 2 failed");
-        }
-        //then for SIGCHLD
-        struct sigaction act_chld;
-        act_chld.sa_flags = 0;
-        act_chld.sa_handler = sigchld_handler;
-        error = sigaction(SIGCHLD, &act_chld, NULL);
-        if (error != 0) {
-            printf("sigaction number 3 failed");
-        }
+        // //block signals from reaching the foreground until the job is added
+        // sigset_t mask;
+        // sigemptyset(&mask);
+        // sigaddset(&mask, SIGINT);
+        // sigaddset(&mask, SIGTSTP);
+        // sigprocmask(SIG_SETMASK, &mask, NULL);
+        // //in addition to blocking signals, ignore them, so that the child never receives blocked signals
+        // //first for SIGINT
+        // struct sigaction act_int;
+        // act_int.sa_flags = 0;
+        // act_int.sa_handler = SIG_IGN;
+        // error = sigaction(SIGINT, &act_int, NULL);
+        // if (error != 0) {
+        //     printf("sigaction number 1 failed");
+        // }
+        // //then for SIGTSTP
+        // struct sigaction act_stop;
+        // act_stop.sa_flags = 0;
+        // act_stop.sa_handler = SIG_IGN;
+        // error = sigaction(SIGTSTP, &act_stop, NULL);
+        // if (error != 0) {
+        //     printf("sigaction number 2 failed");
+        // }
+        // //then for SIGCHLD
+        // struct sigaction act_chld;
+        // act_chld.sa_flags = 0;
+        // act_chld.sa_handler = sigchld_handler;
+        // error = sigaction(SIGCHLD, &act_chld, NULL);
+        // if (error != 0) {
+        //     printf("sigaction number 3 failed");
+        // }
 
         int r = fork(); 
 
@@ -222,31 +221,32 @@ void eval(char *cmdline) {
                 addjob(jobs, r, BG, cmdline);
             } 
             else {  // To be run in fg
+                
                 addjob(jobs, r, FG, cmdline);
                 waitfg(r);
             }
         }
         else if (r == 0) {
 
-            //unblock signals for exec call
-            sigprocmask(SIG_UNBLOCK, &mask, NULL); 
+            // //unblock signals for exec call
+            // sigprocmask(SIG_UNBLOCK, &mask, NULL); 
 
-            //un-ignoring signals for exec call
-            act_int.sa_handler = SIG_DFL;
-            error = sigaction(SIGINT, &act_int, NULL);
-            if (error != 0) {
-                printf("sigaction number 4 failed");
-            }
-            act_stop.sa_handler = SIG_DFL;
-            error = sigaction(SIGTSTP, &act_stop, NULL);
-            if (error != 0) {
-                printf("sigaction number 5 failed");
-            }
-            act_chld.sa_handler = SIG_DFL;
-            error = sigaction(SIGCHLD, &act_chld, NULL);
-            if (error != 0) {
-                printf("sigaction number 6 failed");
-            }
+            // //un-ignoring signals for exec call
+            // act_int.sa_handler = SIG_DFL;
+            // error = sigaction(SIGINT, &act_int, NULL);
+            // if (error != 0) {
+            //     printf("sigaction number 4 failed");
+            // }
+            // act_stop.sa_handler = SIG_DFL;
+            // error = sigaction(SIGTSTP, &act_stop, NULL);
+            // if (error != 0) {
+            //     printf("sigaction number 5 failed");
+            // }
+            // act_chld.sa_handler = SIG_DFL;
+            // error = sigaction(SIGCHLD, &act_chld, NULL);
+            // if (error != 0) {
+            //     printf("sigaction number 6 failed");
+            // }
 
             //prevents SIGINT from reaching any child processes that it shouldn't
             setpgid(0, 0); 
@@ -415,14 +415,15 @@ void waitfg(pid_t pid) {
     sigset_t mask, oldmask;
     sigemptyset(&mask);
     sigaddset(&mask, SIGCHLD);
-    
+    sigaddset(&mask, SIGINT);
+    sigaddset(&mask, SIGTSTP);
     sigprocmask(SIG_BLOCK, &mask, &oldmask);
 
     sigsuspend(&oldmask);
-    if (fgpid(jobs) != pid){
-        sigprocmask(SIG_UNBLOCK, &mask, NULL);
-        deletejob(jobs, pid);
-    }
+    
+    
+    sigprocmask(SIG_UNBLOCK, &mask, NULL);
+    deletejob(jobs, pid);
 }
 
 
@@ -470,11 +471,12 @@ void sigchld_handler(int sig) {
  *    to the foreground job.  
  */
 void sigint_handler(int sig) {
-
-    //TODO: figure out what else to do here. error checking?
-
-    int id = fgpid(jobs);
-    kill(-id, sig);
+    pid_t pid = fgpid(jobs);
+    printf("This is the pid of the job %d", (int) pid);
+    if (pid != 0) {
+        // Forward SIGINT signal to the foreground process group
+        kill(pid, sig);
+    }
 
 }
 
@@ -496,8 +498,6 @@ void sigtstp_handler(int sig) {
  * sigusr1_handler - child is ready
  */
 void sigusr1_handler(int sig) {
-
-    //TODO: figure out where to use this
 
     ready = 1;
 }
