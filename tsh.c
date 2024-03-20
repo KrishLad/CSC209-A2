@@ -203,12 +203,9 @@ void eval(char *cmdline) {
             }
         }
         else if (r == 0) {
-
-            // Unblock signals
             sigprocmask(SIG_SETMASK, &bmask, NULL);
 
             //prevents SIGINT from reaching any child processes that it shouldn't
-            sleep(5);
             setpgid(0, 0); 
 
             if (strcmp(argv[argc-1], "&") == 0) { 
@@ -367,17 +364,18 @@ void do_bgfg(char **argv) {
  * waitfg - Block until process pid is no longer the foreground process
  */
 void waitfg(pid_t pid) {
-    while(fgpid(jobs) == pid){
-    sigset_t mask, oldmask;
-    sigemptyset(&mask);
-    sigaddset(&mask, SIGCHLD);
-    sigaddset(&mask, SIGINT);
-    sigaddset(&mask, SIGTSTP);
-    sigprocmask(SIG_BLOCK, &mask, &oldmask);
-
-    sigsuspend(&oldmask);
     
-    sigprocmask(SIG_UNBLOCK, &mask, NULL);
+    sigset_t mask, oldmask;
+    while(fgpid(jobs) == pid){
+        sigemptyset(&mask);
+        sigaddset(&mask, SIGCHLD);
+        sigaddset(&mask, SIGINT);
+        sigaddset(&mask, SIGTSTP);
+        sigprocmask(SIG_BLOCK, &mask, &oldmask);
+
+        sigsuspend(&oldmask);
+        
+        sigprocmask(SIG_UNBLOCK, &mask, NULL);
     }
 }
 
@@ -426,10 +424,7 @@ void sigchld_handler(int sig) {
  */
 void sigint_handler(int sig) {
     pid_t pid = fgpid(jobs);
-    if (pid != 0) {
-        // Forward SIGINT signal to the foreground process group
-        kill(pid, sig);
-    }
+    kill(pid, sig);
 
 }
 
@@ -439,12 +434,8 @@ void sigint_handler(int sig) {
  *     foreground job by sending it a SIGTSTP.  
  */
 void sigtstp_handler(int sig) {
-
-    //TODO: figure out what else to do here. error checking?
-    
     int id = fgpid(jobs);
     kill(-id, sig);
-
 }
 
 /*
