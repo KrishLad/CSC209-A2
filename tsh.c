@@ -197,7 +197,6 @@ void eval(char *cmdline) {
 
             } 
             else {  // To be run in fg
-                printf("Here\n");
                 addjob(jobs, r, FG, cmdline);
                 waitfg(r);
             }
@@ -366,7 +365,7 @@ void do_bgfg(char **argv) {
  * waitfg - Block until process pid is no longer the foreground process
  */
 void waitfg(pid_t pid) {
-
+    while(fgpid(jobs) == pid){
     sigset_t mask, oldmask;
     sigemptyset(&mask);
     sigaddset(&mask, SIGCHLD);
@@ -377,7 +376,7 @@ void waitfg(pid_t pid) {
     sigsuspend(&oldmask);
     
     sigprocmask(SIG_UNBLOCK, &mask, NULL);
-    deletejob(jobs, pid);
+    }
 }
 
 
@@ -397,7 +396,7 @@ void sigchld_handler(int sig) {
     int status;
     int id;
 
-    while ((id = waitpid(0, &status, WNOHANG | WUNTRACED)) > 0) {
+    while ((id = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0) {
         struct job_t *job = getjobpid(jobs, id);
         if (job == NULL) {
             exit(1);
