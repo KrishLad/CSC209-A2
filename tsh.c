@@ -198,6 +198,7 @@ void eval(char *cmdline) {
             } 
             else {  // To be run in fg
                 addjob(jobs, r, FG, cmdline);
+                sigprocmask(SIG_SETMASK, &bmask, NULL);
                 waitfg(r);
             }
         }
@@ -207,6 +208,7 @@ void eval(char *cmdline) {
             sigprocmask(SIG_SETMASK, &bmask, NULL);
 
             //prevents SIGINT from reaching any child processes that it shouldn't
+            sleep(5);
             setpgid(0, 0); 
 
             if (strcmp(argv[argc-1], "&") == 0) { 
@@ -424,7 +426,6 @@ void sigchld_handler(int sig) {
  */
 void sigint_handler(int sig) {
     pid_t pid = fgpid(jobs);
-    printf("This is the pid of the job %d", (int) pid);
     if (pid != 0) {
         // Forward SIGINT signal to the foreground process group
         kill(pid, sig);
