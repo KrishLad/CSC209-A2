@@ -299,7 +299,7 @@ void do_bgfg(char **argv) {
     int id;
 
     //get the correct job to operate on
-    if (argv[1][0] == '%') {  // Know its a JID
+    if (strchr(argv[1], '%') != NULL) {  // Know its a JID
         char *end;
         int id = strtol(argv[1] + 1, &end, 10);
         printf("%d\n", id);
@@ -318,15 +318,13 @@ void do_bgfg(char **argv) {
         //update state
         if (cur_job->state == ST){ //If the job is under the stopped state.
             // kill - ie, send SIGCONT
-            if (argv[1][0] == '%') {
+            if (strchr(argv[1], '%') != NULL) {  // JID  // This is problematic
                 kill(cur_job->jid, SIGCONT);
                 cur_job->state = BG;
-                listjobs(jobs);
             }
-            else {
+            else {  // Use PID
                 kill(cur_job->pid, SIGCONT);
                 cur_job->state = BG;
-                listjobs(jobs);
             }
         } 
         else {
@@ -341,16 +339,17 @@ void do_bgfg(char **argv) {
         if (cur_job->state == ST || cur_job->state == BG){ //If the job is in the background state or stopped
             if (fgpid(jobs) == 0) {  // There's no job in the foreground
                 // kill - ie, send SIGCONT
-                if (argv[1][0] == '%') {
+                if (strchr(argv[1], '%') != NULL) {  // JID  // This is problematic
                     kill(cur_job->jid, SIGCONT);
-                    cur_job->state = BG;
-                    listjobs(jobs);
+                    cur_job->state = FG;
                 }
                 else {
                     kill(cur_job->pid, SIGCONT);
                     cur_job->state = FG;
-                    listjobs(jobs);
                 }
+            }
+            else {
+                perror("There is currently a job in the foreground\n");
             }
         } 
         else {
