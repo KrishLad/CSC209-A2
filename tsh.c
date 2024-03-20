@@ -178,75 +178,34 @@ void eval(char *cmdline) {
     else {
         int error;
 
-        // //block signals from reaching the foreground until the job is added
-        // sigset_t mask;
-        // sigemptyset(&mask);
-        // sigaddset(&mask, SIGINT);
-        // sigaddset(&mask, SIGTSTP);
-        // sigprocmask(SIG_SETMASK, &mask, NULL);
-        // //in addition to blocking signals, ignore them, so that the child never receives blocked signals
-        // //first for SIGINT
-        // struct sigaction act_int;
-        // act_int.sa_flags = 0;
-        // act_int.sa_handler = SIG_IGN;
-        // error = sigaction(SIGINT, &act_int, NULL);
-        // if (error != 0) {
-        //     printf("sigaction number 1 failed");
-        // }
-        // //then for SIGTSTP
-        // struct sigaction act_stop;
-        // act_stop.sa_flags = 0;
-        // act_stop.sa_handler = SIG_IGN;
-        // error = sigaction(SIGTSTP, &act_stop, NULL);
-        // if (error != 0) {
-        //     printf("sigaction number 2 failed");
-        // }
-        // //then for SIGCHLD
-        // struct sigaction act_chld;
-        // act_chld.sa_flags = 0;
-        // act_chld.sa_handler = sigchld_handler;
-        // error = sigaction(SIGCHLD, &act_chld, NULL);
-        // if (error != 0) {
-        //     printf("sigaction number 3 failed");
-        // }
+        sigset_t mask, bmask;
+        sigemptyset(&mask);
+        sigaddset(&mask, SIGINT);
+        sigaddset(&mask, SIGTSTP);
+        sigprocmask(SIG_BLOCK, &mask, &bmask);
 
         int r = fork(); 
 
         if (r > 0) {
+
             //in case the parent runs before the child, we want to ensure no signals meant for parent PGID reach child
             setpgid(r, r);
             
             //add jobs
             if (strcmp(argv[argc-1], "&") == 0) {  // To be run in bg
                 addjob(jobs, r, BG, cmdline);
+
             } 
             else {  // To be run in fg
-                
+                printf("Here\n");
                 addjob(jobs, r, FG, cmdline);
                 waitfg(r);
             }
         }
         else if (r == 0) {
 
-            // //unblock signals for exec call
-            // sigprocmask(SIG_UNBLOCK, &mask, NULL); 
-
-            // //un-ignoring signals for exec call
-            // act_int.sa_handler = SIG_DFL;
-            // error = sigaction(SIGINT, &act_int, NULL);
-            // if (error != 0) {
-            //     printf("sigaction number 4 failed");
-            // }
-            // act_stop.sa_handler = SIG_DFL;
-            // error = sigaction(SIGTSTP, &act_stop, NULL);
-            // if (error != 0) {
-            //     printf("sigaction number 5 failed");
-            // }
-            // act_chld.sa_handler = SIG_DFL;
-            // error = sigaction(SIGCHLD, &act_chld, NULL);
-            // if (error != 0) {
-            //     printf("sigaction number 6 failed");
-            // }
+            // Unblock signals
+            sigprocmask(SIG_SETMASK, &bmask, NULL);
 
             //prevents SIGINT from reaching any child processes that it shouldn't
             setpgid(0, 0); 
@@ -264,11 +223,7 @@ void eval(char *cmdline) {
                 exit(1);
             }
         }
-
     }
-
-    free(argv);
-
 }
 
 /* 
@@ -421,7 +376,6 @@ void waitfg(pid_t pid) {
 
     sigsuspend(&oldmask);
     
-    
     sigprocmask(SIG_UNBLOCK, &mask, NULL);
     deletejob(jobs, pid);
 }
@@ -439,7 +393,6 @@ void waitfg(pid_t pid) {
  *     currently running children to terminate.  
  */
 void sigchld_handler(int sig) {
-
 
     int status;
     int id;
