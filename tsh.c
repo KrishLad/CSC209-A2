@@ -17,6 +17,7 @@
 #define MAXLINE    1024   /* max line size */
 #define MAXARGS     128   /* max args on a command line */
 #define MAXJOBS      16   /* max jobs at any point in time */
+
 /* Job states */
 #define UNDEF 0 /* undefined */
 #define FG 1    /* running in foreground */
@@ -130,7 +131,6 @@ int main(int argc, char **argv) {
     initjobs(jobs);
 
     /* Execute the shell's read/eval loop */
-    
     while (1) {
 
         /* Read command line */
@@ -165,62 +165,58 @@ int main(int argc, char **argv) {
  * when we type ctrl-c (ctrl-z) at the keyboard.  
 */
 void eval(char *cmdline) {
-    char **argv = malloc(sizeof(char *)*MAXARGS);
-    int argc = parseline(cmdline, argv);
+    char *argv[MAXARGS];
+    int argc;
+    pid_t pid;
+    int err;
+    sigset_t mask, prev_mask;
 
-    if(argc == 0){
+    argc = parseline(cmdline, argv);
+
+    if (argc == 0 || argv[0] == NULL) {
         return;
     }
-    if (strcmp(argv[0], "quit") == 0 || strcmp(argv[0], "jobs") == 0 || strcmp(argv[0], "bg") == 0 || (strcmp(argv[0], "fg") == 0))
-    {
-        builtin_cmd(argv);
-    } 
+    else if (strcmp(argv[0], "quit") == 0 || strcmp(argv[0], "jobs") == 0 || strcmp(argv[0], "bg") == 0 || (strcmp(argv[0], "fg") == 0)) {
+        err = builtin_cmd(argv);
+        if (err != 0) {
+            exit(err);
+        }
+    }
     else {
-        int error;
-
-        sigset_t mask, bmask;
+        // Block SIGCHLD signals temporarily to avoid race conditions
         sigemptyset(&mask);
+        sigaddset(&mask, SIGCHLD);
         sigaddset(&mask, SIGINT);
         sigaddset(&mask, SIGTSTP);
-        sigprocmask(SIG_BLOCK, &mask, &bmask);
+        sigprocmask(SIG_BLOCK, &mask, &prev_mask);
+        
+        pid = fork();
 
-        int r = fork(); 
+        //in child process
+        if (pid == 0) {
+            sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+            setpgid(0,0);
 
-        if (r > 0) {
-
-            //in case the parent runs before the child, we want to ensure no signals meant for parent PGID reach child
-            setpgid(r, r);
-            
-            //add jobs
-            if (strcmp(argv[argc-1], "&") == 0) {  // To be run in bg
-                addjob(jobs, r, BG, cmdline);
-
+            if (strcmp(argv[argc-1], "&") == 0) { //background process
+                argv[argc-1] = '\0';
             } 
-            else {  // To be run in fg
-                addjob(jobs, r, FG, cmdline);
-                sigprocmask(SIG_SETMASK, &bmask, NULL);
-                waitfg(r);
-            }
-        }
-        else if (r == 0) {
-            sigprocmask(SIG_SETMASK, &bmask, NULL);
 
-            //prevents SIGINT from reaching any child processes that it shouldn't
-            setpgid(0, 0); 
-
-            if (strcmp(argv[argc-1], "&") == 0) { 
-                argv[argc-1] = '\0';  // Makes '&' null to prevent errors
-            }
-
-            //call execve here. for now, execv is fine
-            //TODO: figure out pipes, and then figure out how to use execve with them
-            error = execv(argv[0], argv);
-
-            if (error != 0) {
-                printf("Error %d", error);
+            err = execv(argv[0], argv);
+            if (err < 0) {
                 exit(1);
             }
         }
+
+        //in parent process
+        if (strcmp(argv[argc-1], "&") == 0) { //background process
+            addjob(jobs, pid, BG, cmdline);
+            sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+        } else { //foreground process
+            addjob(jobs, pid, FG, cmdline);
+            sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+            waitfg(pid);
+        }
+
     }
 }
 
@@ -276,107 +272,71 @@ int parseline(const char *cmdline, char **argv) {
  *    it immediately.  
  */
 int builtin_cmd(char **argv) {
-    //TODO: error checking
-
     if (strcmp(argv[0], "quit") == 0) {
-        exit(0);
+        exit(0); // Exit the shell
     } else if (strcmp(argv[0], "jobs") == 0) {
-        listjobs(jobs);
+        listjobs(jobs); // List all background jobs
         return 0;
-    } else if (strcmp(argv[0], "fg") == 0 || strcmp(argv[0], "bg") == 0) {
-        do_bgfg(argv);
+    } else if (strcmp(argv[0], "bg") == 0 || strcmp(argv[0], "fg") == 0) {
+        do_bgfg(argv); // Execute bg or fg command
         return 0;
+    } else {
+        return 1;
     }
-    return 1;
 }
 
 /* 
  * do_bgfg - Execute the builtin bg and fg commands
  */
 void do_bgfg(char **argv) {
-
     struct job_t *cur_job;
-    int id;
-
-    //get the correct job to operate on
-    if (argv[1][0] == '%') {  // Know its a JID
-        char *end;
-        int id = strtol(argv[1] + 1, &end, 10);
-        printf("%d\n", id);
-        cur_job = getjobjid(jobs, id);
-    }
-    else {  // Know its a PID
-        id = strtol(argv[1], NULL, 10);
-        printf("%d\n", id);
-        cur_job = getjobpid(jobs, id);
-    }
+    int pid, jid;
+    char *id;
     
-    //move the current job to the background if it is stopped.
-    //TODO: what do we do if it is in the foreground?
-    if (strcmp(argv[0], "bg") == 0) {
-
-        //update state
-        if (cur_job->state == ST){ //If the job is under the stopped state.
-            // kill - ie, send SIGCONT
-            if (argv[1][0] == '%') {
-                kill(cur_job->jid, SIGCONT);
-                cur_job->state = BG;
-                listjobs(jobs);
-            }
-            else {
-                kill(cur_job->pid, SIGCONT);
-                cur_job->state = BG;
-                listjobs(jobs);
-            }
-        } 
-        else {
-            //error check
-            perror("Process has not been stopped\n");
-        }   
+    //ensuring we actually have an id argument
+    if (argv[1] == NULL) {
+        exit(1);
+    } else {
+        id = argv[1];
     }
-    //move the current job to the foreground, so long as there is not already a foreground job running
-    else if (strcmp(argv[0], "fg") == 0) {
 
-        //update state
-        if (cur_job->state == ST || cur_job->state == BG){ //If the job is in the background state or stopped
-            if (fgpid(jobs) == 0) {  // There's no job in the foreground
-                // kill - ie, send SIGCONT
-                if (argv[1][0] == '%') {
-                    kill(cur_job->jid, SIGCONT);
-                    cur_job->state = BG;
-                    listjobs(jobs);
-                }
-                else {
-                    kill(cur_job->pid, SIGCONT);
-                    cur_job->state = FG;
-                    listjobs(jobs);
-                }
-            }
-        } 
-        else {
-            //error check
-            perror("Job is not running in background or is not stopped\n");
-        } 
+    id = argv[1];
+    if (id[0] == '%') {
+        jid = atoi(&id[1]);
+        cur_job = getjobjid(jobs, jid);
     }
+    else {
+        pid = atoi(&id[0]);
+        cur_job = getjobpid(jobs, pid);    
+    }
+
+    if (strcmp(argv[0], "bg") == 0 && cur_job->state == ST) {
+        kill(-(cur_job->pid), SIGCONT);
+        cur_job->state = BG;
+    } 
+    else if (strcmp(argv[0], "fg") == 0 && (cur_job->state == ST || cur_job->state == BG )) {
+        kill(-(cur_job->pid), SIGCONT);
+        cur_job->state = FG;
+        waitfg(cur_job->pid);
+    }
+
 }
 
 /* 
  * waitfg - Block until process pid is no longer the foreground process
  */
 void waitfg(pid_t pid) {
-    
-    sigset_t mask, oldmask;
-    while(fgpid(jobs) == pid){
-        sigemptyset(&mask);
-        sigaddset(&mask, SIGCHLD);
-        sigaddset(&mask, SIGINT);
-        sigaddset(&mask, SIGTSTP);
-        sigprocmask(SIG_BLOCK, &mask, &oldmask);
+    sigset_t mask, prev_mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGCHLD);
+    sigprocmask(SIG_BLOCK, &mask, &prev_mask);
 
-        sigsuspend(&oldmask);
-        
-        sigprocmask(SIG_UNBLOCK, &mask, NULL);
+    // Suspend until the job is no longer in the foreground
+    while (fgpid(jobs) == pid) {
+        sigsuspend(&prev_mask);
     }
+
+    sigprocmask(SIG_SETMASK, &prev_mask, NULL);
 }
 
 
@@ -392,29 +352,20 @@ void waitfg(pid_t pid) {
  *     currently running children to terminate.  
  */
 void sigchld_handler(int sig) {
-
+    pid_t pid;
     int status;
-    int id;
 
-    while ((id = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0) {
-        struct job_t *job = getjobpid(jobs, id);
-        if (job == NULL) {
-            exit(1);
-        }
-        else if (WIFSTOPPED(status)) {
-            job->state = ST;
-            kill(id, WSTOPSIG(status));
-        }
-        else if (WIFSIGNALED(status)) {
-            deletejob(jobs, id);
-            kill(id, sig);
-        } else if (WIFEXITED(status)) {
-            deletejob(jobs, id);
-            kill(id, sig);
-        } else {
-            unix_error("waitpid error");
+    while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0) {
+        if (WIFSTOPPED(status)) {
+            struct job_t *job = getjobpid(jobs, pid);
+            if (job != NULL) {
+                job->state = ST;
+            }
+        } else if (WIFSIGNALED(status) || WIFEXITED(status)) {
+            deletejob(jobs, pid);
         }
     }
+
 }
 
 /* 
@@ -424,8 +375,9 @@ void sigchld_handler(int sig) {
  */
 void sigint_handler(int sig) {
     pid_t pid = fgpid(jobs);
-    kill(pid, sig);
-
+    if (pid != 0) {
+        kill(-pid, SIGINT); // Send SIGINT to the entire foreground process group
+    }
 }
 
 /*
@@ -434,15 +386,24 @@ void sigint_handler(int sig) {
  *     foreground job by sending it a SIGTSTP.  
  */
 void sigtstp_handler(int sig) {
-    int id = fgpid(jobs);
-    kill(-id, sig);
+    pid_t pid = fgpid(jobs);
+    if (pid != 0) {
+        kill(-pid, SIGTSTP); // Send SIGTSTP to the entire foreground process group
+    }
+
+    //setting job state to stopped
+    struct job_t *job = getjobpid(jobs, pid);
+    if (job == NULL) {
+        exit(1);
+    } else {
+        job->state = ST;
+    }
 }
 
 /*
  * sigusr1_handler - child is ready
  */
 void sigusr1_handler(int sig) {
-
     ready = 1;
 }
 
@@ -658,3 +619,5 @@ void sigquit_handler(int sig) {
     printf("Terminating after receipt of SIGQUIT signal\n");
     exit(1);
 }
+
+
