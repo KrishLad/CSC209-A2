@@ -85,7 +85,8 @@ void unix_error(char *msg);
 void app_error(char *msg);
 typedef void handler_t(int);
 handler_t *Signal(int signum, handler_t *handler);
-
+/* Team Define Helpers*/
+void findredirection(int argc, char **argv, int *hasinput, int *hasoutput);
 /*
  * main - The shell's main routine 
  */
@@ -200,8 +201,32 @@ void eval(char *cmdline) {
             if (strcmp(argv[argc-1], "&") == 0) { //background process
                 argv[argc-1] = '\0';
             } 
+            int hasinput, hasoutput; 
+            findredirection(argc,argv,&hasinput,&hasoutput);
 
-            err = execv(argv[0], argv);
+            if (hasinput > 0){ 
+                int inputfilefd = open(argv[hasinput+1],O_RDONLY); //opens the file for read only 
+                if (inputfilefd < 0){
+                    perror("Error in opening"); 
+                }
+                if (dup2(inputfilefd,fileno(stdin)) == -1){
+                    perror("dup2: in input");
+                }
+                close(inputfilefd);
+            }
+
+            if(hasoutput > 0){ 
+                int outputfilefd = open(argv[hasoutput+1], O_WRONLY | O_CREAT| O_TRUNC, 0644);
+                if(outputfilefd < 0){
+                    perror("Error in opening");
+                }
+                if (dup2(outputfilefd, fileno(stdout)) == -1){
+                    perror("dup2: in output");
+                }
+                close(outputfilefd);
+            }
+
+            err = execvp(argv[0], argv);
             if (err < 0) {
                 exit(1);
             }
@@ -219,7 +244,19 @@ void eval(char *cmdline) {
 
     }
 }
-
+/* Helper for finding redirection*/
+void findredirection(int argc, char **argv, int *hasinput, int *hasoutput){
+    *hasinput = -1;
+    *hasoutput = -1; 
+    for (int i  = 0; i < argc; i++){
+        if (strcmp(argv[i],"<") == 0){
+            *hasinput = i;
+        } 
+        else if(strcmp(argv[i], ">") == 0){
+            *hasoutput = i; 
+        }
+    }
+}
 /* 
  * parseline - Parse the command line and build the argv array.
  * 
@@ -619,5 +656,4 @@ void sigquit_handler(int sig) {
     printf("Terminating after receipt of SIGQUIT signal\n");
     exit(1);
 }
-
 
