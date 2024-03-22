@@ -87,6 +87,8 @@ typedef void handler_t(int);
 handler_t *Signal(int signum, handler_t *handler);
 /* Team Define Helpers*/
 void findredirection(int argc, char **argv, int *hasinput, int *hasoutput);
+int haspiping(int argc, char** argv);
+void getcommandsfrompipe(int argc, char**argv, char** programs);
 /*
  * main - The shell's main routine 
  */
@@ -173,7 +175,7 @@ void eval(char *cmdline) {
     sigset_t mask, prev_mask;
 
     argc = parseline(cmdline, argv);
-
+    int piped = haspiping(argc, argv); 
     if (argc == 0 || argv[0] == NULL) {
         return;
     }
@@ -182,6 +184,39 @@ void eval(char *cmdline) {
         if (err != 0) {
             exit(err);
         }
+    }
+    else if(piped){
+        char *programs[piped + 1]; // Contains all the programs to be executed
+        getcommandsfrompipe(argc,argv,programs); // retrives the programs from the commandline
+
+        // Block SIGCHLD signals temporarily to avoid race conditions
+        sigemptyset(&mask);
+        sigaddset(&mask, SIGCHLD);
+        sigaddset(&mask, SIGINT);
+        sigaddset(&mask, SIGTSTP);
+        sigprocmask(SIG_BLOCK, &mask, &prev_mask);
+
+        int pid = fork();
+
+        // In the main parent 
+        //Add check for background job
+        if(pid > 0){
+            if (strcmp(programs[piped], "&"))
+            { // if we want this to run in the background
+                addjob(jobs, pid, BG, cmdline);
+                sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+            }
+            else
+            { // we want this to run in the foreground.
+                addjob(jobs, pid, FG, cmdline);
+                sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+                waitfg(pid);
+            }
+        }
+        else if (pid == 0){ // In the child we execute all the pipeline shit
+            //TODO: Fork and wait() follow the tutorial you saw 
+        }
+        
     }
     else {
         // Block SIGCHLD signals temporarily to avoid race conditions
@@ -254,6 +289,26 @@ void findredirection(int argc, char **argv, int *hasinput, int *hasoutput){
         } 
         else if(strcmp(argv[i], ">") == 0){
             *hasoutput = i; 
+        }
+    }
+}
+/*Helper for checking whether there is piping*/
+int haspiping(int argc, char **argv){
+    int pipes = 0;
+    for(int i =0; i < argc; i++){
+        if (strcmp(argv[i],"|") == 0){
+            pipes++;
+        }
+    }
+    return pipes;
+}
+/*Helper to get all the program in a given pipe*/
+void getcommandsfrompipe(int argc, char** argv, char** programs){
+    int j = 0;
+    for(int i = 0; i < argc; i++){
+        if (strcmp(argv[i], "|") != 0){
+            programs[j] = argv[i];
+            j++;
         }
     }
 }
