@@ -231,7 +231,7 @@ void eval(char *cmdline) {
             err = execvp(argv[0], argv);
             if (err < 0) {
                 printf("%s: Command not found\n", argv[0]);
-                return;
+                exit(err);
             }
         }
 
@@ -446,7 +446,7 @@ void do_bgfg(char **argv) {
     
     //ensuring we actually have an id argument
     if (argv[1] == NULL) {
-        printf("%s argument requires a PID or %%jid argument\n", argv[0]);
+        printf("%s command requires PID or %%jid argument\n", argv[0]);
         return;
     } else {
         id = argv[1];
