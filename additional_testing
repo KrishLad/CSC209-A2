@@ -1,0 +1,72 @@
+Running two or more bg jobs and then turning one of them into fg
+
+./myint 10 &
+./myspin 15 &
+
+fg <pid>
+
+jobs
+
+Running two or more fg jobs and then turning one of them into bg
+
+./myint 10
+./myspin 15
+
+bg <pid>
+
+jobs
+
+Running bg and fg jobs and then switching both to opposite state
+
+./myint 10 &
+./myspin 15
+
+bg <pid>
+fg <pid>
+
+jobs
+
+Use fg/bg with both PID/JID
+
+./myint 10 &
+
+fg <jid> 
+
+jobs
+
+./myint 10
+
+- STOP -
+
+bg <jid> 
+
+jobs
+
+Error handling with do_bg
+a) Turning a fg into a bg without stopping
+
+./myint 10
+
+bg <pid> 
+
+b) Calling fg on fg program and bg on bg program
+
+./myint 10 &  <- bg
+./myspin 15  <- fg
+
+bg <pid>  <- on first
+fg <pid>  <- on second
+
+c) Calling bg/fg on invalid pid/jid
+
+./myint 10 &  <- bg
+./myspin 15  <- fg
+
+bg <pid>  <- on first invalid pid
+fg <pid>  <- on second invalid jid
+
+
+Demonstrating builtin commands (ls, other ones?)
+
+Redirection related test? TODO
+Pipe related test? TODO
