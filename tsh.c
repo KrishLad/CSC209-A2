@@ -85,10 +85,13 @@ void unix_error(char *msg);
 void app_error(char *msg);
 typedef void handler_t(int);
 handler_t *Signal(int signum, handler_t *handler);
+
+
 /* Team Define Helpers*/
-void findredirection(int argc, char **argv, int *hasinput, int *hasoutput);
-int haspiping(int argc, char** argv);
-void getcommandsfrompipe(int argc, char**argv, char** programs);
+void setup_redirection(char **argv);
+int has_piping(char **argv, int argc);
+void my_pipe(char **argv, int argc);
+
 /*
  * main - The shell's main routine 
  */
@@ -168,14 +171,17 @@ int main(int argc, char **argv) {
  * when we type ctrl-c (ctrl-z) at the keyboard.  
 */
 void eval(char *cmdline) {
-    char *argv[MAXARGS];
+    char **argv = malloc(sizeof(char *) * MAXARGS);
     int argc;
     pid_t pid;
+    int jid;
+    struct job_t *job;
     int err;
     sigset_t mask, prev_mask;
+    int done = 0;
 
     argc = parseline(cmdline, argv);
-    int piped = haspiping(argc, argv); 
+
     if (argc == 0 || argv[0] == NULL) {
         return;
     }
@@ -185,41 +191,7 @@ void eval(char *cmdline) {
             exit(err);
         }
     }
-    else if(piped){
-        char *programs[piped + 1]; // Contains all the programs to be executed
-        getcommandsfrompipe(argc,argv,programs); // retrives the programs from the commandline
-
-        // Block SIGCHLD signals temporarily to avoid race conditions
-        sigemptyset(&mask);
-        sigaddset(&mask, SIGCHLD);
-        sigaddset(&mask, SIGINT);
-        sigaddset(&mask, SIGTSTP);
-        sigprocmask(SIG_BLOCK, &mask, &prev_mask);
-
-        int pid = fork();
-
-        // In the main parent 
-        //Add check for background job
-        if(pid > 0){
-            if (strcmp(programs[piped], "&"))
-            { // if we want this to run in the background
-                addjob(jobs, pid, BG, cmdline);
-                sigprocmask(SIG_SETMASK, &prev_mask, NULL);
-            }
-            else
-            { // we want this to run in the foreground.
-                addjob(jobs, pid, FG, cmdline);
-                sigprocmask(SIG_SETMASK, &prev_mask, NULL);
-                waitfg(pid);
-            }
-        }
-        else if (pid == 0){ // In the child we execute all the pipeline shit
-            //TODO: Fork and wait() follow the tutorial you saw 
-        }
-        
-    }
     else {
-        // Block SIGCHLD signals temporarily to avoid race conditions
         sigemptyset(&mask);
         sigaddset(&mask, SIGCHLD);
         sigaddset(&mask, SIGINT);
@@ -228,48 +200,51 @@ void eval(char *cmdline) {
         
         pid = fork();
 
+        if (pid < 0) {
+            printf("Error forking");
+            return;
+        }
         //in child process
         if (pid == 0) {
             sigprocmask(SIG_SETMASK, &prev_mask, NULL);
             setpgid(0,0);
+            Signal(SIGINT, SIG_DFL);
+            Signal(SIGTSTP, SIG_DFL);
 
+            //for input and output redirection
+            setup_redirection(argv);
+
+            //replace & with null terminator so that exec runs correctly
             if (strcmp(argv[argc-1], "&") == 0) { //background process
                 argv[argc-1] = '\0';
-            } 
-            int hasinput, hasoutput; 
-            findredirection(argc,argv,&hasinput,&hasoutput);
-
-            if (hasinput > 0){ 
-                int inputfilefd = open(argv[hasinput+1],O_RDONLY); //opens the file for read only 
-                if (inputfilefd < 0){
-                    perror("Error in opening"); 
-                }
-                if (dup2(inputfilefd,fileno(stdin)) == -1){
-                    perror("dup2: in input");
-                }
-                close(inputfilefd);
-            }
-
-            if(hasoutput > 0){ 
-                int outputfilefd = open(argv[hasoutput+1], O_WRONLY | O_CREAT| O_TRUNC, 0644);
-                if(outputfilefd < 0){
-                    perror("Error in opening");
-                }
-                if (dup2(outputfilefd, fileno(stdout)) == -1){
-                    perror("dup2: in output");
-                }
-                close(outputfilefd);
             }
 
             err = execvp(argv[0], argv);
             if (err < 0) {
-                exit(1);
+                printf("%s: Command not found\n", argv[0]);
+                return;
+            }
+
+            //handle piping
+            if (has_piping(argv, argc) == 1) {
+                printf("piping...");
+                my_pipe(argv, argc);
+            } else {
+                printf("normal command");
+                
             }
         }
 
         //in parent process
+        setpgid(pid, pid);
+        Signal(SIGINT, sigint_handler);
+        Signal(SIGTSTP, sigtstp_handler);
+
         if (strcmp(argv[argc-1], "&") == 0) { //background process
             addjob(jobs, pid, BG, cmdline);
+            jid = pid2jid(pid);
+            job = getjobpid(jobs, pid);
+            printf("[%d] (%d) %s", jid, pid, job->cmdline);
             sigprocmask(SIG_SETMASK, &prev_mask, NULL);
         } else { //foreground process
             addjob(jobs, pid, FG, cmdline);
@@ -279,39 +254,96 @@ void eval(char *cmdline) {
 
     }
 }
-/* Helper for finding redirection*/
-void findredirection(int argc, char **argv, int *hasinput, int *hasoutput){
-    *hasinput = -1;
-    *hasoutput = -1; 
-    for (int i  = 0; i < argc; i++){
-        if (strcmp(argv[i],"<") == 0){
-            *hasinput = i;
-        } 
-        else if(strcmp(argv[i], ">") == 0){
-            *hasoutput = i; 
+
+void setup_redirection(char **argv) {
+    int i;
+    for (i = 0; argv[i] != NULL; i++) {
+        if (strcmp(argv[i], "<") == 0) { 
+            int fd0 = open(argv[i+1], O_RDONLY, 0);
+            dup2(fd0, STDIN_FILENO);
+            close(fd0);
+            argv[i] = NULL; // remove redirection from argv so it runs correctly
+        }
+        else if (strcmp(argv[i], ">") == 0) { 
+            int fd1 = open(argv[i+1], O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR);
+            dup2(fd1, STDOUT_FILENO);
+            close(fd1);
+            argv[i] = NULL; 
         }
     }
 }
-/*Helper for checking whether there is piping*/
-int haspiping(int argc, char **argv){
-    int pipes = 0;
-    for(int i =0; i < argc; i++){
-        if (strcmp(argv[i],"|") == 0){
-            pipes++;
+
+int has_piping(char **argv, int argc) {
+    for (int i = 0; i < argc; i++) {
+        if (strcmp(argv[i], "|") == 0) {
+            return 1; // we found a pipe
         }
     }
-    return pipes;
+    return 0; // we didn't find a pipe
 }
-/*Helper to get all the program in a given pipe*/
-void getcommandsfrompipe(int argc, char** argv, char** programs){
-    int j = 0;
-    for(int i = 0; i < argc; i++){
-        if (strcmp(argv[i], "|") != 0){
-            programs[j] = argv[i];
-            j++;
+
+void my_pipe(char **argv, int argc) {
+    int err;
+    char *new_argv[MAXARGS][MAXARGS];
+    int count = 0;
+    int sec_count = -1;
+    int pipefd[2];
+    int prev_fd = -1;
+    int pid = 0;
+
+    //parsing command line
+    for (int i = 0; i < argc; i++) {
+        if (strcmp(argv[i], "|") == 0) {
+            sec_count = -1;
+            count ++;
+        } else {
+            sec_count ++;
+            new_argv[count][sec_count] = argv[i];
         }
     }
+    count ++;
+
+    for (int j = 0; j < count; j++) {
+        err = pipe(pipefd);
+        if (err != 0) {
+            printf("Piping error");
+            return;
+        }
+
+        pid = fork();
+        if (pid == 0) {
+
+            if (prev_fd != -1) {
+                // If not the first command, get input from the previous pipe
+                dup2(prev_fd, STDIN_FILENO);
+                close(prev_fd);
+            }
+
+            if (j < count) {
+                dup2(pipefd[1], STDOUT_FILENO);
+                err = execvp(new_argv[j][0], new_argv[j]);
+                if (err == -1) {
+                    fprintf(stderr, "Failed to execute command: %s\n", new_argv[j][0]);
+                    return;
+                }
+            }
+            close(pipefd[0]);
+
+        } else if (pid < 0) {
+            perror("fork");
+            return;
+        }
+
+        // Parent process
+        if (prev_fd != -1) {
+            close(prev_fd); // Close previous read end
+        }
+        close(pipefd[1]); // Close write end of the current pipe
+        prev_fd = pipefd[0]; // Save read end for the next command
+    }
+
 }
+
 /* 
  * parseline - Parse the command line and build the argv array.
  * 
@@ -383,28 +415,45 @@ int builtin_cmd(char **argv) {
 void do_bgfg(char **argv) {
     struct job_t *cur_job;
     int pid, jid;
-    char *id;
+    char *id = NULL;
     
     //ensuring we actually have an id argument
     if (argv[1] == NULL) {
-        exit(1);
+        printf("%s argument requires a PID or %%jid argument\n", argv[0]);
+        return;
     } else {
         id = argv[1];
     }
 
-    id = argv[1];
     if (id[0] == '%') {
         jid = atoi(&id[1]);
+        if (jid == 0) {
+            printf("%s: argument must be a PID or %%jid\n", argv[0]);
+            return;
+        }
         cur_job = getjobjid(jobs, jid);
+        if (cur_job == NULL) {
+            printf("%%%d: No such job\n", jid);
+            return;
+        }
     }
     else {
         pid = atoi(&id[0]);
-        cur_job = getjobpid(jobs, pid);    
+        if (pid == 0) {
+            printf("%s: argument must be a PID or %%jid\n", argv[0]);
+            return;
+        }
+        cur_job = getjobpid(jobs, pid);
+        if (cur_job == NULL) {
+            printf("(%d): No such process\n", pid);
+            return;
+        }    
     }
 
     if (strcmp(argv[0], "bg") == 0 && cur_job->state == ST) {
         kill(-(cur_job->pid), SIGCONT);
         cur_job->state = BG;
+        printf("[%d] (%d) %s", cur_job->jid, cur_job->pid, cur_job->cmdline);
     } 
     else if (strcmp(argv[0], "fg") == 0 && (cur_job->state == ST || cur_job->state == BG )) {
         kill(-(cur_job->pid), SIGCONT);
@@ -446,18 +495,21 @@ void waitfg(pid_t pid) {
 void sigchld_handler(int sig) {
     pid_t pid;
     int status;
+    struct job_t *job;
 
     while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0) {
+        job = getjobpid(jobs, pid);
+
         if (WIFSTOPPED(status)) {
-            struct job_t *job = getjobpid(jobs, pid);
             if (job != NULL) {
                 job->state = ST;
             }
-        } else if (WIFSIGNALED(status) || WIFEXITED(status)) {
+        } else if (WIFSIGNALED(status)) {
+            deletejob(jobs, pid);
+        } else if (WIFEXITED(status)) {
             deletejob(jobs, pid);
         }
     }
-
 }
 
 /* 
@@ -466,9 +518,12 @@ void sigchld_handler(int sig) {
  *    to the foreground job.  
  */
 void sigint_handler(int sig) {
+
     pid_t pid = fgpid(jobs);
+    struct job_t *job = getjobpid(jobs, pid);
     if (pid != 0) {
-        kill(-pid, SIGINT); // Send SIGINT to the entire foreground process group
+        printf("Job [%d] (%d) terminated by signal %d\n", job->jid, job->pid, sig);
+        kill(-pid, sig); // Send SIGINT to the entire foreground process group
     }
 }
 
@@ -478,13 +533,16 @@ void sigint_handler(int sig) {
  *     foreground job by sending it a SIGTSTP.  
  */
 void sigtstp_handler(int sig) {
+
     pid_t pid = fgpid(jobs);
+    struct job_t *job = getjobpid(jobs, pid);
+
     if (pid != 0) {
-        kill(-pid, SIGTSTP); // Send SIGTSTP to the entire foreground process group
+        printf("Job [%d] (%d) stopped by signal %d\n", job->jid, job->pid, sig);
+        kill(-pid, sig); // Send SIGTSTP to the entire foreground process group
     }
 
     //setting job state to stopped
-    struct job_t *job = getjobpid(jobs, pid);
     if (job == NULL) {
         exit(1);
     } else {
