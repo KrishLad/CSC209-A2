@@ -191,7 +191,6 @@ void eval(char *cmdline) {
         }
     }
     else if (has_piping(argv, argc) == 1) { //need to put it in a separate if or else we have a fork within a fork, which is messy
-        printf("piping...1");
 
         sigemptyset(&mask);
         sigaddset(&mask, SIGCHLD);
@@ -294,8 +293,6 @@ void my_pipe(char **argv, int argc, sigset_t *prev_mask, char *cmdline) {
     int jid;
     struct job_t *job;
 
-    printf("piping...2");
-
     //parsing command line
     //split on the |, store in a 2d array of strings. for example:
     //ls | grep .txt -> [ [ls], [grep .txt] ]
@@ -312,6 +309,7 @@ void my_pipe(char **argv, int argc, sigset_t *prev_mask, char *cmdline) {
 
     //loop over the 2d array
     for (int j = 0; j < count; j++) {
+
         err = pipe(pipefd);
         if (err != 0) {
             printf("Piping error");
@@ -320,6 +318,7 @@ void my_pipe(char **argv, int argc, sigset_t *prev_mask, char *cmdline) {
 
         pid = fork();
         if (pid == 0) { //child process
+            
 
             if (prev_fd != -1) {
                 //if we are not at the first command, get input from the previous command. 
@@ -329,24 +328,27 @@ void my_pipe(char **argv, int argc, sigset_t *prev_mask, char *cmdline) {
             }
 
             //if we are not at the last command, then redirect output to fd
-            if (j < count) {
+            if (j < count - 1) {
                 dup2(pipefd[1], STDOUT_FILENO);
-                err = execvp(new_argv[j][0], new_argv[j]);
-                if (err == -1) {
-                    fprintf(stderr, "Failed to execute command: %s\n", new_argv[j][0]);
-                    return;
-                }
             }
+            
+            err = execvp(new_argv[j][0], new_argv[j]);
+            if (err == -1) {
+                fprintf(stderr, "Failed to execute command: %s\n", new_argv[j][0]);
+                return;
+            }
+        
             close(pipefd[0]);
 
         } else if (pid < 0) {
             perror("fork");
             return;
         } else { //parent process
+
             if (prev_fd != -1) {
-                close(prev_fd);
+                close(prev_fd); // close the last reading end
             }
-            close(pipefd[1]); 
+            close(pipefd[1]); //closing the writing end
             prev_fd = pipefd[0]; // save read end for the next command
 
             //exact same thing we do for a regular process
