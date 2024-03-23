@@ -90,7 +90,7 @@ handler_t *Signal(int signum, handler_t *handler);
 /* Team Define Helpers*/
 void setup_redirection(char **argv);
 int has_piping(char **argv, int argc);
-void my_pipe(char **argv, int argc);
+void my_pipe(char **argv, int argc, sigset_t *prev_mask, char *cmdline);
 
 /*
  * main - The shell's main routine 
@@ -178,7 +178,6 @@ void eval(char *cmdline) {
     struct job_t *job;
     int err;
     sigset_t mask, prev_mask;
-    int done = 0;
 
     argc = parseline(cmdline, argv);
 
@@ -191,8 +190,16 @@ void eval(char *cmdline) {
             exit(err);
         }
     }
-    else if (has_piping(argv, argc) == 1) {
-        my_pipe(argv, argc);
+    else if (has_piping(argv, argc) == 1) { //need to put it in a separate if or else we have a fork within a fork, which is messy
+        printf("piping...1");
+
+        sigemptyset(&mask);
+        sigaddset(&mask, SIGCHLD);
+        sigaddset(&mask, SIGINT);
+        sigaddset(&mask, SIGTSTP);
+        sigprocmask(SIG_BLOCK, &mask, &prev_mask);
+
+        my_pipe(argv, argc, &prev_mask, cmdline);
     }
     else {
         sigemptyset(&mask);
@@ -276,16 +283,22 @@ int has_piping(char **argv, int argc) {
     return 0; // we didn't find a pipe
 }
 
-void my_pipe(char **argv, int argc) {
+void my_pipe(char **argv, int argc, sigset_t *prev_mask, char *cmdline) {
     int err;
     char *new_argv[MAXARGS][MAXARGS];
     int count = 0;
     int sec_count = -1;
     int pipefd[2];
     int prev_fd = -1;
-    int pid = 0;
+    pid_t pid = 0;
+    int jid;
+    struct job_t *job;
+
+    printf("piping...2");
 
     //parsing command line
+    //split on the |, store in a 2d array of strings. for example:
+    //ls | grep .txt -> [ [ls], [grep .txt] ]
     for (int i = 0; i < argc; i++) {
         if (strcmp(argv[i], "|") == 0) {
             sec_count = -1;
@@ -295,8 +308,9 @@ void my_pipe(char **argv, int argc) {
             new_argv[count][sec_count] = argv[i];
         }
     }
-    count ++;
+    count ++; // this is necessary for some reason, it breaks without it.
 
+    //loop over the 2d array
     for (int j = 0; j < count; j++) {
         err = pipe(pipefd);
         if (err != 0) {
@@ -305,14 +319,16 @@ void my_pipe(char **argv, int argc) {
         }
 
         pid = fork();
-        if (pid == 0) {
+        if (pid == 0) { //child process
 
             if (prev_fd != -1) {
-                // If not the first command, get input from the previous pipe
+                //if we are not at the first command, get input from the previous command. 
+                //no else bc if we are at the first command, we just take input from STDIN
                 dup2(prev_fd, STDIN_FILENO);
                 close(prev_fd);
             }
 
+            //if we are not at the last command, then redirect output to fd
             if (j < count) {
                 dup2(pipefd[1], STDOUT_FILENO);
                 err = execvp(new_argv[j][0], new_argv[j]);
@@ -326,14 +342,29 @@ void my_pipe(char **argv, int argc) {
         } else if (pid < 0) {
             perror("fork");
             return;
-        }
+        } else { //parent process
+            if (prev_fd != -1) {
+                close(prev_fd);
+            }
+            close(pipefd[1]); 
+            prev_fd = pipefd[0]; // save read end for the next command
 
-        // Parent process
-        if (prev_fd != -1) {
-            close(prev_fd); // Close previous read end
+            //exact same thing we do for a regular process
+            if (strcmp(argv[argc-1], "&") == 0) { //background process
+                addjob(jobs, pid, BG, cmdline);
+                jid = pid2jid(pid);
+                job = getjobpid(jobs, pid);
+                printf("[%d] (%d) %s", jid, pid, job->cmdline);
+                //pass in prev_mask instead of &prev_mask bc in this function its passed as an address
+                sigprocmask(SIG_SETMASK, prev_mask, NULL);
+            } else { //foreground process
+                addjob(jobs, pid, FG, cmdline);
+                //pass in prev_mask instead of &prev_mask bc in this function its passed as an address
+                sigprocmask(SIG_SETMASK, prev_mask, NULL);
+                waitfg(pid);
+            }
+
         }
-        close(pipefd[1]); // Close write end of the current pipe
-        prev_fd = pipefd[0]; // Save read end for the next command
     }
 
 }
