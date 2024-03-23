@@ -1,0 +1,22 @@
+# 1 - run multiple foreground jobs and call bg correctly
+Expect it to run correctly and expect that it moves correct job to fg
+
+./myint 10
+TSTP
+
+./myspin 20
+TSTP
+
+jobs
+fg <pid of first call>
+jobs
+
+# 2 - use pipes to execute simple commands 
+ls | grep .txt
+ls | grep .c
+
+# 3 - use multiple pipes in one command :  TODO
+
+# 4 - use input and output redirection in both orders   :   TODO
+
+# 5 - either one more pipe test or some edge case of dobgfg or signal handling - but please make it something that works, i dont want to code anymroe lol
