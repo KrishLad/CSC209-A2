@@ -191,6 +191,9 @@ void eval(char *cmdline) {
             exit(err);
         }
     }
+    else if (has_piping(argv, argc) == 1) {
+        my_pipe(argv, argc);
+    }
     else {
         sigemptyset(&mask);
         sigaddset(&mask, SIGCHLD);
@@ -223,15 +226,6 @@ void eval(char *cmdline) {
             if (err < 0) {
                 printf("%s: Command not found\n", argv[0]);
                 return;
-            }
-
-            //handle piping
-            if (has_piping(argv, argc) == 1) {
-                printf("piping...");
-                my_pipe(argv, argc);
-            } else {
-                printf("normal command");
-                
             }
         }
 
