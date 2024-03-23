@@ -519,25 +519,47 @@ void waitfg(pid_t pid) {
  *     available zombie children, but doesn't wait for any other
  *     currently running children to terminate.  
  */
+#include <unistd.h> // For write()
+
 void sigchld_handler(int sig) {
     pid_t pid;
     int status;
     struct job_t *job;
+    char buf[256]; // Buffer for messages
+    int err;
 
     while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0) {
         job = getjobpid(jobs, pid);
 
         if (WIFSTOPPED(status)) {
+            // Update job state to stopped
             if (job != NULL) {
                 job->state = ST;
             }
+            int len = snprintf(buf, sizeof(buf), "Job [%d] (%d) stopped by signal %d\n", job->jid, job->pid, WSTOPSIG(status));
+            if (len > 0) {
+                err = write(STDOUT_FILENO, buf, len);
+                if (err == -1) {
+                    exit(1);
+                }
+            }
         } else if (WIFSIGNALED(status)) {
+            // Job was terminated by a signal
+            int len = snprintf(buf, sizeof(buf), "Job [%d] (%d) terminated by signal %d\n", job->jid, job->pid, WTERMSIG(status));
+            if (len > 0) {
+                err = write(STDOUT_FILENO, buf, len);
+                if (err == -1) {
+                    exit(1);
+                }
+            }
             deletejob(jobs, pid);
         } else if (WIFEXITED(status)) {
+            // Job exited normally
             deletejob(jobs, pid);
         }
     }
 }
+
 
 /* 
  * sigint_handler - The kernel sends a SIGINT to the shell whenever the
@@ -547,10 +569,9 @@ void sigchld_handler(int sig) {
 void sigint_handler(int sig) {
 
     pid_t pid = fgpid(jobs);
-    struct job_t *job = getjobpid(jobs, pid);
+
     if (pid != 0) {
-        printf("Job [%d] (%d) terminated by signal %d\n", job->jid, job->pid, sig);
-        kill(-pid, sig); // Send SIGINT to the entire foreground process group
+        kill(-pid, SIGINT); // Send SIGINT to the entire foreground process group
     }
 }
 
@@ -565,8 +586,7 @@ void sigtstp_handler(int sig) {
     struct job_t *job = getjobpid(jobs, pid);
 
     if (pid != 0) {
-        printf("Job [%d] (%d) stopped by signal %d\n", job->jid, job->pid, sig);
-        kill(-pid, sig); // Send SIGTSTP to the entire foreground process group
+        kill(-pid, SIGTSTP); // Send SIGTSTP to the entire foreground process group
     }
 
     //setting job state to stopped
