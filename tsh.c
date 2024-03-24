@@ -296,6 +296,7 @@ void my_pipe(char **argv, int argc, sigset_t *prev_mask, char *cmdline) {
     //parsing command line
     //split on the |, store in a 2d array of strings. for example:
     //ls | grep .txt -> [ [ls], [grep .txt] ]
+
     for (int i = 0; i < argc; i++) {
         if (strcmp(argv[i], "|") == 0) {
             sec_count = -1;
@@ -306,7 +307,6 @@ void my_pipe(char **argv, int argc, sigset_t *prev_mask, char *cmdline) {
         }
     }
     count ++; // this is necessary for some reason, it breaks without it.
-
     //loop over the 2d array
     for (int j = 0; j < count; j++) {
 
@@ -318,7 +318,13 @@ void my_pipe(char **argv, int argc, sigset_t *prev_mask, char *cmdline) {
 
         pid = fork();
         if (pid == 0) { //child process
-            
+            sigprocmask(SIG_SETMASK, prev_mask, NULL);
+            setpgid(0,0);
+            Signal(SIGINT, SIG_DFL);
+            Signal(SIGTSTP, SIG_DFL);
+
+            //for input and output redirection
+            setup_redirection(new_argv[j]);
 
             if (prev_fd != -1) {
                 //if we are not at the first command, get input from the previous command. 
@@ -344,6 +350,9 @@ void my_pipe(char **argv, int argc, sigset_t *prev_mask, char *cmdline) {
             perror("fork");
             return;
         } else { //parent process
+            setpgid(pid, pid);
+            Signal(SIGINT, sigint_handler);
+            Signal(SIGTSTP, sigtstp_handler);
 
             if (prev_fd != -1) {
                 close(prev_fd); // close the last reading end
